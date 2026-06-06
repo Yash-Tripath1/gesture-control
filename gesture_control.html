@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>🖐️ Gesture Control — Handsfree.js</title>
+
+  <!-- Handsfree.js from CDN -->
+  <link rel="stylesheet" href="https://unpkg.com/handsfree@8.5.1/build/lib/assets/handsfree.css"/>
+  <script src="https://unpkg.com/handsfree@8.5.1/build/lib/handsfree.js"></script>
+
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: #0d0d0d;
+      color: #f0f0f0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    /* ── Top bar ── */
+    header {
+      width: 100%;
+      background: #111;
+      border-bottom: 1px solid #222;
+      padding: 14px 28px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    header h1 { font-size: 1.2rem; letter-spacing: 1px; }
+    header h1 span { color: #00e5a0; }
+
+    #status-badge {
+      padding: 6px 16px;
+      border-radius: 999px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      background: #222;
+      color: #aaa;
+      border: 1px solid #333;
+      transition: all 0.3s;
+    }
+    #status-badge.active {
+      background: #003d28;
+      color: #00e5a0;
+      border-color: #00e5a0;
+      box-shadow: 0 0 10px #00e5a044;
+    }
+    #status-badge.loading {
+      background: #2b2000;
+      color: #ffb300;
+      border-color: #ffb300;
+    }
+
+    /* ── Main layout ── */
+    .main {
+      width: 100%;
+      max-width: 1100px;
+      padding: 28px 20px;
+      display: grid;
+      grid-template-columns: 1fr 340px;
+      gap: 24px;
+    }
+
+    /* ── Left: webcam + gesture display ── */
+    .cam-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    #webcam-wrap {
+      position: relative;
+      border-radius: 16px;
+      overflow: hidden;
+      background: #111;
+      border: 2px solid #222;
+      aspect-ratio: 4/3;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* Handsfree injects its own canvas/video here */
+    #webcam-wrap .handsfree-debugger,
+    #webcam-wrap canvas,
+    #webcam-wrap video {
+      width: 100% !important;
+      height: 100% !important;
+      object-fit: cover;
+      border-radius: 14px;
+    }
+
+    #cam-placeholder {
+      text-align: center;
+      color: #555;
+      padding: 40px;
+      font-size: 0.95rem;
+      line-height: 1.8;
+    }
+    #cam-placeholder .icon { font-size: 3rem; margin-bottom: 12px; }
+
+    /* Gesture overlay pill */
+    #gesture-display {
+      position: absolute;
+      bottom: 14px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.75);
+      backdrop-filter: blur(6px);
+      border: 1px solid #333;
+      border-radius: 999px;
+      padding: 8px 22px;
+      font-size: 1rem;
+      font-weight: 600;
+      color: #00e5a0;
+      white-space: nowrap;
+      opacity: 0;
+      transition: opacity 0.2s;
+      pointer-events: none;
+    }
+    #gesture-display.show { opacity: 1; }
+
+    /* ── Controls ── */
+    .controls {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      padding: 12px 24px;
+      border-radius: 10px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: all 0.2s;
+    }
+
+    #btn-start {
+      background: #00e5a0;
+      color: #000;
+      flex: 1;
+    }
+    #btn-start:hover { background: #00c98c; transform: translateY(-1px); }
+    #btn-start:disabled { background: #1a4d3a; color: #555; cursor: not-allowed; transform: none; }
+
+    #btn-stop {
+      background: #2a0a0a;
+      color: #ff5555;
+      border: 1px solid #ff5555;
+      flex: 1;
+    }
+    #btn-stop:hover { background: #400; }
+    #btn-stop:disabled { opacity: 0.3; cursor: not-allowed; }
+
+    /* ── Right: gesture guide + log ── */
+    .side-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .card {
+      background: #111;
+      border: 1px solid #222;
+      border-radius: 14px;
+      padding: 18px;
+    }
+    .card h2 {
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      color: #555;
+      margin-bottom: 14px;
+    }
+
+    /* Gesture list */
+    .gesture-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 0;
+      border-bottom: 1px solid #1a1a1a;
+    }
+    .gesture-item:last-child { border-bottom: none; }
+    .gesture-icon {
+      font-size: 1.6rem;
+      width: 40px;
+      text-align: center;
+      flex-shrink: 0;
+    }
+    .gesture-info { flex: 1; }
+    .gesture-name {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: #eee;
+      margin-bottom: 2px;
+    }
+    .gesture-desc {
+      font-size: 0.75rem;
+      color: #555;
+      line-height: 1.4;
+    }
+    .gesture-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #222;
+      flex-shrink: 0;
+      transition: background 0.2s, box-shadow 0.2s;
+    }
+    .gesture-dot.lit {
+      background: #00e5a0;
+      box-shadow: 0 0 6px #00e5a0;
+    }
+
+    /* Log */
+    #log {
+      font-size: 0.78rem;
+      color: #00e5a0;
+      font-family: monospace;
+      max-height: 180px;
+      overflow-y: auto;
+      line-height: 1.8;
+    }
+    #log .log-line { color: #555; }
+    #log .log-line span { color: #00e5a0; }
+    #log .log-line.action span { color: #ffb300; }
+
+    /* ── Tips card ── */
+    .tip { font-size: 0.8rem; color: #555; line-height: 1.8; }
+    .tip b { color: #aaa; }
+
+    /* ── Scrollable demo area ── */
+    .scroll-demo {
+      margin-top: 12px;
+      background: #111;
+      border: 1px solid #222;
+      border-radius: 14px;
+      padding: 18px;
+    }
+    .scroll-demo h2 {
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      color: #555;
+      margin-bottom: 12px;
+    }
+    .scroll-content {
+      height: 180px;
+      overflow-y: auto;
+      color: #555;
+      font-size: 0.85rem;
+      line-height: 2;
+      padding-right: 8px;
+      scroll-behavior: smooth;
+    }
+    .scroll-content::-webkit-scrollbar { width: 4px; }
+    .scroll-content::-webkit-scrollbar-thumb { background: #333; border-radius: 4px; }
+
+    /* Handsfree debugger override */
+    .handsfree-debugger {
+      border-radius: 14px !important;
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Header ── -->
+<header>
+  <h1>🖐️ Gesture <span>Control</span></h1>
+  <div id="status-badge">● OFFLINE</div>
+</header>
+
+<div class="main">
+
+  <!-- ── LEFT PANEL ── -->
+  <div class="cam-panel">
+
+    <div id="webcam-wrap">
+      <div id="cam-placeholder">
+        <div class="icon">📷</div>
+        <div>Click <b>Start Gesture Control</b> below<br/>to activate your webcam</div>
+      </div>
+      <div id="gesture-display"></div>
+    </div>
+
+    <div class="controls">
+      <button id="btn-start">▶ Start Gesture Control</button>
+      <button id="btn-stop" disabled>■ Stop</button>
+    </div>
+
+    <!-- Scrollable area for scroll gesture demo -->
+    <div class="scroll-demo">
+      <h2>📜 Scroll Test Area — try pinching to scroll here!</h2>
+      <div class="scroll-content" id="scroll-area">
+        <p>👋 Welcome! This area is scrollable.</p>
+        <p>Use the <b>pinch gesture</b> (index + thumb) and move your hand up/down to scroll.</p>
+        <p>Line 3 — keep going...</p>
+        <p>Line 4 — you're doing great!</p>
+        <p>Line 5 — halfway there...</p>
+        <p>Line 6 — almost at the bottom...</p>
+        <p>Line 7 — getting closer...</p>
+        <p>Line 8 — just a bit more...</p>
+        <p>Line 9 — nearly there...</p>
+        <p>Line 10 — you made it to the bottom! 🎉</p>
+        <p>Line 11 — keep scrolling to go back up</p>
+        <p>Line 12 — ...</p>
+        <p>Line 13 — ...</p>
+        <p>Line 14 — ...</p>
+        <p>Line 15 — top again? Nice gesture control! 🚀</p>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── RIGHT PANEL ── -->
+  <div class="side-panel">
+
+    <!-- Gesture Guide -->
+    <div class="card">
+      <h2>🖐 Gesture Guide</h2>
+
+      <div class="gesture-item" id="g-move">
+        <div class="gesture-icon">☝️</div>
+        <div class="gesture-info">
+          <div class="gesture-name">Move Cursor</div>
+          <div class="gesture-desc">Point with index finger — cursor follows your fingertip</div>
+        </div>
+        <div class="gesture-dot" id="dot-move"></div>
+      </div>
+
+      <div class="gesture-item" id="g-click">
+        <div class="gesture-icon">👌</div>
+        <div class="gesture-info">
+          <div class="gesture-name">Click</div>
+          <div class="gesture-desc">Pinch index + thumb together (left hand = left click)</div>
+        </div>
+        <div class="gesture-dot" id="dot-click"></div>
+      </div>
+
+      <div class="gesture-item" id="g-scroll">
+        <div class="gesture-icon">✌️</div>
+        <div class="gesture-info">
+          <div class="gesture-name">Scroll Up / Down</div>
+          <div class="gesture-desc">Pinch with right hand, move hand up/down to scroll</div>
+        </div>
+        <div class="gesture-dot" id="dot-scroll"></div>
+      </div>
+
+      <div class="gesture-item" id="g-rclick">
+        <div class="gesture-icon">🤙</div>
+        <div class="gesture-info">
+          <div class="gesture-name">Right Click</div>
+          <div class="gesture-desc">Pinch index + thumb with right hand (brief pinch)</div>
+        </div>
+        <div class="gesture-dot" id="dot-rclick"></div>
+      </div>
+
+      <div class="gesture-item" id="g-drag">
+        <div class="gesture-icon">🤏</div>
+        <div class="gesture-info">
+          <div class="gesture-name">Drag</div>
+          <div class="gesture-desc">Pinch and hold while moving your hand</div>
+        </div>
+        <div class="gesture-dot" id="dot-drag"></div>
+      </div>
+
+    </div>
+
+    <!-- Log -->
+    <div class="card">
+      <h2>📋 Activity Log</h2>
+      <div id="log">
+        <div class="log-line">Waiting for gesture control to start...</div>
+      </div>
+    </div>
+
+    <!-- Tips -->
+    <div class="card">
+      <h2>💡 Tips</h2>
+      <div class="tip">
+        <b>Good lighting</b> = way better detection.<br/>
+        <b>Keep hand</b> within camera frame.<br/>
+        <b>Models load once</b> then cache — first start may take ~5s.<br/>
+        <b>Works best</b> in Chrome or Edge.<br/>
+        <b>Press Stop</b> anytime to cut webcam off.
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+  // ─────────────────────────────────────────────
+  //  STATE
+  // ─────────────────────────────────────────────
+  let handsfree = null
+  let isRunning = false
+
+  const btnStart      = document.getElementById('btn-start')
+  const btnStop       = document.getElementById('btn-stop')
+  const statusBadge   = document.getElementById('status-badge')
+  const gestureDisplay= document.getElementById('gesture-display')
+  const logEl         = document.getElementById('log')
+  const camWrap       = document.getElementById('webcam-wrap')
+  const placeholder   = document.getElementById('cam-placeholder')
+
+  // ─────────────────────────────────────────────
+  //  LOGGING
+  // ─────────────────────────────────────────────
+  let logLines = []
+  function addLog(msg, isAction = false) {
+    const time = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'})
+    logLines.push({ time, msg, isAction })
+    if (logLines.length > 30) logLines.shift()
+    logEl.innerHTML = logLines.slice().reverse().map(l =>
+      `<div class="log-line ${l.isAction ? 'action' : ''}">
+        <span>[${l.time}]</span> ${l.msg}
+      </div>`
+    ).join('')
+  }
+
+  // ─────────────────────────────────────────────
+  //  GESTURE DISPLAY
+  // ─────────────────────────────────────────────
+  let gestureTimeout = null
+  function showGesture(label, dotId) {
+    gestureDisplay.textContent = label
+    gestureDisplay.classList.add('show')
+    // Light up dot
+    document.querySelectorAll('.gesture-dot').forEach(d => d.classList.remove('lit'))
+    if (dotId) document.getElementById(dotId)?.classList.add('lit')
+    clearTimeout(gestureTimeout)
+    gestureTimeout = setTimeout(() => {
+      gestureDisplay.classList.remove('show')
+      document.querySelectorAll('.gesture-dot').forEach(d => d.classList.remove('lit'))
+    }, 800)
+  }
+
+  // ─────────────────────────────────────────────
+  //  INIT HANDSFREE
+  // ─────────────────────────────────────────────
+  function initHandsfree() {
+    if (handsfree) return
+
+    handsfree = new Handsfree({
+      showDebug: true,   // shows the webcam feed with hand skeleton overlay
+      hands: {
+        enabled: true,
+        maxNumHands: 2,
+        minDetectionConfidence: 0.75,
+        minTrackingConfidence: 0.75
+      }
+    })
+
+    // ── Enable built-in browser plugins (pinch scroll, pointer, click) ──
+    handsfree.enablePlugins('browser')
+
+    // ── Custom plugin: detect gestures and show in UI ──
+    handsfree.use('gestureUI', (data) => {
+      if (!data.hands || !data.hands.landmarks) return
+
+      const landmarks = data.hands.landmarks
+      const pinchState = data.hands.pinchState  // [leftIndex, leftPinky, rightIndex, rightPinky]
+
+      if (!landmarks || landmarks.length === 0) return
+
+      // Check pinch states from first hand
+      const leftPinch  = pinchState && pinchState[0]  // left hand index pinch
+      const rightPinch = pinchState && pinchState[2]  // right hand index pinch
+
+      if (leftPinch === 'start' || leftPinch === 'held') {
+        showGesture('👌 CLICK / DRAG', 'dot-click')
+        if (leftPinch === 'start') {
+          addLog('👌 Left pinch — Click!', true)
+        }
+      } else if (rightPinch === 'start' || rightPinch === 'held') {
+        showGesture('🤏 SCROLL / RIGHT CLICK', 'dot-scroll')
+        if (rightPinch === 'start') {
+          addLog('🤏 Right pinch — Scroll/Right click!', true)
+        }
+      } else if (landmarks[0]) {
+        showGesture('☝️ MOVING CURSOR', 'dot-move')
+      }
+    })
+
+    // Move the debugger (webcam feed) into our container
+    const debugEl = document.querySelector('.handsfree-debugger')
+    if (debugEl) {
+      camWrap.appendChild(debugEl)
+    }
+  }
+
+  // ─────────────────────────────────────────────
+  //  START
+  // ─────────────────────────────────────────────
+  btnStart.addEventListener('click', () => {
+    if (isRunning) return
+
+    btnStart.disabled = true
+    btnStart.textContent = '⏳ Loading models...'
+    statusBadge.className = 'loading'
+    statusBadge.textContent = '● LOADING'
+    placeholder.style.display = 'none'
+
+    addLog('Initializing Handsfree.js...')
+
+    initHandsfree()
+
+    handsfree.start()
+
+    // Wait for models to load then update UI
+    handsfree.on('modelReady', () => {
+      isRunning = true
+      btnStart.textContent = '✅ Running'
+      btnStop.disabled = false
+      statusBadge.className = 'active'
+      statusBadge.textContent = '● LIVE'
+      addLog('✅ Gesture control is LIVE!', true)
+      addLog('Hand models loaded and ready.')
+
+      // Move debugger canvas into our div after it appears
+      setTimeout(() => {
+        const debugEl = document.querySelector('.handsfree-debugger')
+        if (debugEl && !camWrap.contains(debugEl)) {
+          camWrap.appendChild(debugEl)
+        }
+      }, 500)
+    })
+  })
+
+  // ─────────────────────────────────────────────
+  //  STOP
+  // ─────────────────────────────────────────────
+  btnStop.addEventListener('click', () => {
+    if (!handsfree || !isRunning) return
+
+    handsfree.stop()
+    isRunning = false
+
+    btnStart.disabled = false
+    btnStart.textContent = '▶ Start Gesture Control'
+    btnStop.disabled = true
+    statusBadge.className = ''
+    statusBadge.textContent = '● OFFLINE'
+    gestureDisplay.classList.remove('show')
+    document.querySelectorAll('.gesture-dot').forEach(d => d.classList.remove('lit'))
+
+    placeholder.style.display = 'block'
+    addLog('⏹ Gesture control stopped.')
+  })
+</script>
+
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a07690e70a8eadb1',t:'MTc4MDczOTk4NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>
